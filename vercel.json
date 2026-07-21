@@ -1,7 +1,6 @@
 {
-  "build": {
-    "outputDirectory": "dist"
-  },
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "dist",
   "functions": {
     "api/index.ts": {
       "runtime": "@vercel/node@5.3.6"
