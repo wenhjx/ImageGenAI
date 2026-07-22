@@ -7,12 +7,12 @@ import cors from 'cors'
 import path from 'path'
 import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
-import authRoutes from './routes/auth.js'
-import generateRoutes from './routes/generate.js'
-import generationsRoutes from './routes/generations.js'
-import apiKeysRoutes from './routes/api-keys.js'
-import creditsRoutes from './routes/credits.js'
-import userRoutes from './routes/user.js'
+import authRoutes from './_routes/auth.js'
+import generateRoutes from './_routes/generate.js'
+import generationsRoutes from './_routes/generations.js'
+import apiKeysRoutes from './_routes/api-keys.js'
+import creditsRoutes from './_routes/credits.js'
+import userRoutes from './_routes/user.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
