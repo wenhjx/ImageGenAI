@@ -4,20 +4,12 @@ import express, {
   type NextFunction,
 } from 'express'
 import cors from 'cors'
-import path from 'path'
-import dotenv from 'dotenv'
-import { fileURLToPath } from 'url'
 import authRoutes from './_routes/auth.js'
 import generateRoutes from './_routes/generate.js'
 import generationsRoutes from './_routes/generations.js'
 import apiKeysRoutes from './_routes/api-keys.js'
 import creditsRoutes from './_routes/credits.js'
 import userRoutes from './_routes/user.js'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-dotenv.config()
 
 const app: express.Application = express()
 
@@ -43,6 +35,7 @@ app.use(
 )
 
 app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error('[App] Error handler:', error)
   res.status(500).json({
     success: false,
     error: 'Server internal error',

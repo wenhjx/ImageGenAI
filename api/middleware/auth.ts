@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { supabase } from '../lib/supabase';
+import { env } from '../lib/env';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -24,7 +25,12 @@ export const authMiddleware = async (
   try {
     const { data: { user }, error } = await supabase.auth.getUser(token);
     
-    if (error || !user) {
+    if (error) {
+      console.error('[Auth Middleware] getUser error:', error);
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    if (!user) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     
@@ -35,6 +41,7 @@ export const authMiddleware = async (
     
     next();
   } catch (error) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    console.error('[Auth Middleware] Exception:', error);
+    return res.status(500).json({ error: 'Authentication error' });
   }
 };
