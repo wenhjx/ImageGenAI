@@ -15,6 +15,7 @@ import Register from './pages/Register';
 import { useAuthStore, useCreditsStore } from './store/useStore';
 import { setAuthToken, getCredits } from './lib/api';
 import { supabase } from './lib/supabase';
+import { Analytics } from '@vercel/analytics/react'
 
 function App() {
   const { setUser, setToken } = useAuthStore();
@@ -84,6 +85,7 @@ function App() {
           </main>
         </div>
       </Router>
+      <Analytics />
     </ErrorBoundary>
   );
 }
