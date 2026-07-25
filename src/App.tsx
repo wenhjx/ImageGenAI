@@ -15,7 +15,7 @@ import Register from './pages/Register';
 import { useAuthStore, useCreditsStore } from './store/useStore';
 import { setAuthToken, getCredits } from './lib/api';
 import { supabase } from './lib/supabase';
-import { Analytics } from '@vercel/analytics/react'
+import { inject } from '@vercel/analytics'
 
 function App() {
   const { setUser, setToken } = useAuthStore();
@@ -23,6 +23,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    inject();
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -85,7 +86,6 @@ function App() {
           </main>
         </div>
       </Router>
-      <Analytics />
     </ErrorBoundary>
   );
 }
