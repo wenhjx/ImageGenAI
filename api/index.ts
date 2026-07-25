@@ -1,6 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import express from 'express';
-import cors from 'cors';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 const env = {
@@ -23,18 +21,16 @@ const supabase: SupabaseClient = createClient(env.SUPABASE_URL || '', env.SUPABA
   },
 });
 
-interface AuthenticatedRequest extends VercelRequest {
-  user?: {
-    id: string;
-    email: string;
-  };
+interface User {
+  id: string;
+  email: string;
 }
 
-const authMiddleware = async (req: AuthenticatedRequest, res: VercelResponse, next: () => void) => {
+async function authenticate(req: VercelRequest): Promise<User | null> {
   const authHeader = req.headers.authorization;
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return null;
   }
   
   const token = authHeader.split(' ')[1];
@@ -43,39 +39,38 @@ const authMiddleware = async (req: AuthenticatedRequest, res: VercelResponse, ne
     const { data: { user }, error } = await supabase.auth.getUser(token);
     
     if (error || !user) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return null;
     }
     
-    req.user = {
+    return {
       id: user.id,
       email: user.email || '',
     };
-    
-    next();
-  } catch (error) {
-    return res.status(500).json({ error: 'Authentication error' });
+  } catch {
+    return null;
   }
-};
+}
 
-const app = express();
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const { url, method } = req;
 
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  if (method === 'OPTIONS') {
+    return res.status(200).json({});
+  }
 
-app.get('/api/health', (req, res) => {
-  res.status(200).json({ success: true, message: 'ok' });
-});
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-app.get('/api/credits', async (req: AuthenticatedRequest, res) => {
-  await authMiddleware(req, res, async () => {
+  if (method === 'GET' && url === '/api/health') {
+    return res.status(200).json({ success: true, message: 'ok' });
+  }
+
+  if (method === 'GET' && url === '/api/credits') {
+    const user = await authenticate(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
     try {
-      const user = req.user;
-      
-      if (!user) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
       const { data, error } = await supabase
         .from('credits')
         .select('balance, created_at, updated_at')
@@ -99,23 +94,18 @@ app.get('/api/credits', async (req: AuthenticatedRequest, res) => {
         return res.status(500).json({ error: 'Failed to fetch credits', details: error.message });
       }
 
-      res.json(data);
+      return res.json(data);
     } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch credits', details: String(error) });
+      return res.status(500).json({ error: 'Failed to fetch credits', details: String(error) });
     }
-  });
-});
+  }
 
-app.get('/api/generations', async (req: AuthenticatedRequest, res) => {
-  await authMiddleware(req, res, async () => {
+  if (method === 'GET' && url?.startsWith('/api/generations')) {
+    const user = await authenticate(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
     try {
       const { page = 1, limit = 10 } = req.query;
-      const user = req.user;
-      
-      if (!user) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
       const pageNum = parseInt(page as string, 10);
       const limitNum = parseInt(limit as string, 10);
       const offset = (pageNum - 1) * limitNum;
@@ -131,25 +121,25 @@ app.get('/api/generations', async (req: AuthenticatedRequest, res) => {
         return res.status(500).json({ error: 'Failed to fetch generations', details: error.message });
       }
 
-      res.json({
+      return res.json({
         data: data || [],
         total: count || 0,
         page: pageNum,
         limit: limitNum,
       });
     } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch generations', details: String(error) });
+      return res.status(500).json({ error: 'Failed to fetch generations', details: String(error) });
     }
-  });
-});
+  }
 
-app.delete('/api/generations/:id', async (req: AuthenticatedRequest, res) => {
-  await authMiddleware(req, res, async () => {
+  if (method === 'DELETE' && url?.startsWith('/api/generations/')) {
+    const user = await authenticate(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
     try {
-      const { id } = req.params;
-      const user = req.user;
+      const id = url.split('/api/generations/')[1];
       
-      if (!id || !user) {
+      if (!id) {
         return res.status(400).json({ error: 'Invalid parameters' });
       }
 
@@ -163,20 +153,20 @@ app.delete('/api/generations/:id', async (req: AuthenticatedRequest, res) => {
         return res.status(500).json({ error: 'Failed to delete generation', details: error.message });
       }
 
-      res.json({ success: true });
+      return res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ error: 'Failed to delete generation', details: String(error) });
+      return res.status(500).json({ error: 'Failed to delete generation', details: String(error) });
     }
-  });
-});
+  }
 
-app.get('/api/generations/download/:id', async (req: AuthenticatedRequest, res) => {
-  await authMiddleware(req, res, async () => {
+  if (method === 'GET' && url?.startsWith('/api/generations/download/')) {
+    const user = await authenticate(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
     try {
-      const { id } = req.params;
-      const user = req.user;
+      const id = url.split('/api/generations/download/')[1];
       
-      if (!id || !user) {
+      if (!id) {
         return res.status(400).json({ error: 'Invalid parameters' });
       }
 
@@ -210,20 +200,15 @@ app.get('/api/generations/download/:id', async (req: AuthenticatedRequest, res) 
         return res.status(500).json({ error: 'Failed to download image', details: String(fetchError) });
       }
     } catch (error) {
-      res.status(500).json({ error: 'Failed to download image', details: String(error) });
+      return res.status(500).json({ error: 'Failed to download image', details: String(error) });
     }
-  });
-});
+  }
 
-app.get('/api/api-keys', async (req: AuthenticatedRequest, res) => {
-  await authMiddleware(req, res, async () => {
+  if (method === 'GET' && url === '/api/api-keys') {
+    const user = await authenticate(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
     try {
-      const user = req.user;
-      
-      if (!user) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
       const { data, error } = await supabase
         .from('api_keys')
         .select('id, name, key, created_at')
@@ -234,20 +219,20 @@ app.get('/api/api-keys', async (req: AuthenticatedRequest, res) => {
         return res.status(500).json({ error: 'Failed to fetch API keys', details: error.message });
       }
 
-      res.json(data || []);
+      return res.json(data || []);
     } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch API keys', details: String(error) });
+      return res.status(500).json({ error: 'Failed to fetch API keys', details: String(error) });
     }
-  });
-});
+  }
 
-app.post('/api/api-keys', async (req: AuthenticatedRequest, res) => {
-  await authMiddleware(req, res, async () => {
+  if (method === 'POST' && url === '/api/api-keys') {
+    const user = await authenticate(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
     try {
       const { name } = req.body;
-      const user = req.user;
       
-      if (!name || !user) {
+      if (!name) {
         return res.status(400).json({ error: 'Invalid parameters' });
       }
 
@@ -263,20 +248,20 @@ app.post('/api/api-keys', async (req: AuthenticatedRequest, res) => {
         return res.status(500).json({ error: 'Failed to create API key', details: error.message });
       }
 
-      res.json(data);
+      return res.json(data);
     } catch (error) {
-      res.status(500).json({ error: 'Failed to create API key', details: String(error) });
+      return res.status(500).json({ error: 'Failed to create API key', details: String(error) });
     }
-  });
-});
+  }
 
-app.delete('/api/api-keys/:id', async (req: AuthenticatedRequest, res) => {
-  await authMiddleware(req, res, async () => {
+  if (method === 'DELETE' && url?.startsWith('/api/api-keys/')) {
+    const user = await authenticate(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
     try {
-      const { id } = req.params;
-      const user = req.user;
+      const id = url.split('/api/api-keys/')[1];
       
-      if (!id || !user) {
+      if (!id) {
         return res.status(400).json({ error: 'Invalid parameters' });
       }
 
@@ -290,22 +275,17 @@ app.delete('/api/api-keys/:id', async (req: AuthenticatedRequest, res) => {
         return res.status(500).json({ error: 'Failed to delete API key', details: error.message });
       }
 
-      res.json({ success: true });
+      return res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ error: 'Failed to delete API key', details: String(error) });
+      return res.status(500).json({ error: 'Failed to delete API key', details: String(error) });
     }
-  });
-});
+  }
 
-app.get('/api/user', async (req: AuthenticatedRequest, res) => {
-  await authMiddleware(req, res, async () => {
+  if (method === 'GET' && url === '/api/user') {
+    const user = await authenticate(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
     try {
-      const user = req.user;
-      
-      if (!user) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
       const { data, error } = await supabase
         .from('users')
         .select('name, email, avatar_url')
@@ -316,35 +296,29 @@ app.get('/api/user', async (req: AuthenticatedRequest, res) => {
         return res.json({ id: user.id, email: user.email });
       }
 
-      res.json({ id: user.id, ...data });
+      return res.json({ id: user.id, ...data });
     } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch user', details: String(error) });
+      return res.status(500).json({ error: 'Failed to fetch user', details: String(error) });
     }
-  });
-});
+  }
 
-interface GenerateRequest {
-  prompt: string;
-  width?: number;
-  height?: number;
-  num_outputs?: number;
-  guidance_scale?: number;
-  num_inference_steps?: number;
-  seed?: number;
-}
+  if (method === 'POST' && url === '/api/generate') {
+    const user = await authenticate(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
-app.post('/api/generate', async (req: AuthenticatedRequest, res) => {
-  await authMiddleware(req, res, async () => {
     try {
-      const { prompt, width = 512, height = 512, num_outputs = 1, guidance_scale = 7.5, num_inference_steps = 50, seed } = req.body as GenerateRequest;
+      const { prompt, width = 512, height = 512, num_outputs = 1, guidance_scale = 7.5, num_inference_steps = 50, seed } = req.body as {
+        prompt: string;
+        width?: number;
+        height?: number;
+        num_outputs?: number;
+        guidance_scale?: number;
+        num_inference_steps?: number;
+        seed?: number;
+      };
       
       if (!prompt || prompt.trim().length === 0) {
         return res.status(400).json({ error: 'Prompt is required' });
-      }
-
-      const user = req.user;
-      if (!user) {
-        return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const { data: creditData, error: creditError } = await supabase
@@ -386,23 +360,23 @@ app.post('/api/generate', async (req: AuthenticatedRequest, res) => {
         .update({ balance: creditData.balance - 1 })
         .eq('user_id', user.id);
 
-      res.json({
+      return res.json({
         status: 'succeeded',
         output: [apiUrl],
       });
     } catch (error: any) {
-      res.status(500).json({ error: error.message || 'Failed to generate image', details: String(error) });
+      return res.status(500).json({ error: error.message || 'Failed to generate image', details: String(error) });
     }
-  });
-});
+  }
 
-app.get('/api/generate/status', async (req: AuthenticatedRequest, res) => {
-  await authMiddleware(req, res, async () => {
+  if (method === 'GET' && url?.startsWith('/api/generate/status')) {
+    const user = await authenticate(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
     try {
       const { id } = req.query;
-      const user = req.user;
       
-      if (!id || !user) {
+      if (!id) {
         return res.status(400).json({ error: 'Invalid parameters' });
       }
 
@@ -417,13 +391,11 @@ app.get('/api/generate/status', async (req: AuthenticatedRequest, res) => {
         return res.status(404).json({ error: 'Generation not found' });
       }
 
-      res.json(data);
+      return res.json(data);
     } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch status', details: String(error) });
+      return res.status(500).json({ error: 'Failed to fetch status', details: String(error) });
     }
-  });
-});
+  }
 
-export default function handler(req: VercelRequest, res: VercelResponse) {
-  return app(req, res);
+  return res.status(404).json({ error: 'Not found' });
 }
