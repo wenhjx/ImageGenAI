@@ -49,17 +49,16 @@ const Generate = () => {
       });
 
       if (response.output && response.output.length > 0) {
-        const fixedImages = await Promise.all(
-          response.output.map(async (url) => {
-            try {
-              const imgResponse = await fetch(url);
-              const blob = await imgResponse.blob();
-              return URL.createObjectURL(blob);
-            } catch {
-              return url;
-            }
-          })
-        );
+        const fixedImages = response.output.map((url) => {
+          if (url.startsWith('data:')) {
+            return url;
+          }
+          try {
+            return URL.createObjectURL(new Blob([url]));
+          } catch {
+            return url;
+          }
+        });
         setGeneratedImages(fixedImages);
         addToHistory(currentPrompt);
         

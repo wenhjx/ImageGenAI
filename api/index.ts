@@ -181,23 +181,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(404).json({ error: 'Generation not found' });
       }
 
-      try {
-        const imageResponse = await fetch(data.image_url);
+      if (data.image_url.startsWith('data:')) {
+        const base64Data = data.image_url.split(',')[1];
+        const buffer = Buffer.from(base64Data, 'base64');
         
-        if (!imageResponse.ok) {
-          return res.status(500).json({ error: 'Failed to fetch image' });
-        }
-
-        const blob = await imageResponse.blob();
-        const buffer = await blob.arrayBuffer();
+        const contentType = data.image_url.split(';')[0].split(':')[1] || 'image/png';
         
-        res.setHeader('Content-Type', blob.type || 'image/png');
+        res.setHeader('Content-Type', contentType);
         res.setHeader('Content-Disposition', `attachment; filename="generated-${id}.png"`);
         res.setHeader('Cache-Control', 'no-cache');
         
-        res.end(Buffer.from(buffer));
-      } catch (fetchError) {
-        return res.status(500).json({ error: 'Failed to download image', details: String(fetchError) });
+        res.end(buffer);
+      } else {
+        try {
+          const imageResponse = await fetch(data.image_url);
+          
+          if (!imageResponse.ok) {
+            return res.status(500).json({ error: 'Failed to fetch image' });
+          }
+
+          const blob = await imageResponse.blob();
+          const buffer = await blob.arrayBuffer();
+          
+          res.setHeader('Content-Type', blob.type || 'image/png');
+          res.setHeader('Content-Disposition', `attachment; filename="generated-${id}.png"`);
+          res.setHeader('Cache-Control', 'no-cache');
+          
+          res.end(Buffer.from(buffer));
+        } catch (fetchError) {
+          return res.status(500).json({ error: 'Failed to download image', details: String(fetchError) });
+        }
       }
     } catch (error) {
       return res.status(500).json({ error: 'Failed to download image', details: String(error) });
@@ -343,13 +356,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       
       const apiUrl = `https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=${encodeURIComponent(prompt)}&image_size=${imageSize}`;
       
-      const { error: insertError } = await supabase.from('generations').insert({
+      const imageResponse = await fetch(apiUrl);
+      
+      if (!imageResponse.ok) {
+        throw new Error(`Image generation failed: ${imageResponse.status} ${imageResponse.statusText}`);
+      }
+      
+      const imageBlob = await imageResponse.blob();
+      const imageBuffer = await imageBlob.arrayBuffer();
+      const imageBase64 = `data:${imageBlob.type || 'image/png'};base64,${Buffer.from(imageBuffer).toString('base64')}`;
+      
+      const { error: insertError, data: generationData } = await supabase.from('generations').insert({
         user_id: user.id,
         prompt,
-        image_url: apiUrl,
+        image_url: imageBase64,
         status: 'succeeded',
         parameters: { width, height, num_outputs, guidance_scale, num_inference_steps, seed },
-      });
+      }).select('id').single();
 
       if (insertError) {
         return res.status(500).json({ error: 'Failed to save generation record', details: insertError.message });
@@ -362,7 +385,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       return res.json({
         status: 'succeeded',
-        output: [apiUrl],
+        output: [imageBase64],
       });
     } catch (error: any) {
       return res.status(500).json({ error: error.message || 'Failed to generate image', details: String(error) });
